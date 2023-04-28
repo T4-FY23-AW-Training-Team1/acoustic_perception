@@ -1,0 +1,4 @@
+<launch>
+　<arg name="launch_driver" default="true"/>
+　<node pkg="sound_source_localizer" exec="respeaker_driver" name="respeaker_driver" output="log" if="$(var launch_driver)"/>
+</launch>
