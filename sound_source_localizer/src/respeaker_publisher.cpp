@@ -37,6 +37,10 @@ class RespeakerPublisher : public rclcpp::Node
     RespeakerPublisher()
     : Node("respeaker_driver")
     {
+      active_probability = 0.01;
+      maintain_likelihood = 0.8;
+      active_threshold = 0.8;
+      duration_time_ = 0.0;
       direction_publisher_ = this->create_publisher<acoustics_msgs::msg::SoundSourceDirection>("sound_source_direction", 10);
       arrow_publisher_ = this->create_publisher<visualization_msgs::msg::Marker>("sound_source_direction/arrow", 10);
       timer_ = this->create_wall_timer(
@@ -85,6 +89,24 @@ class RespeakerPublisher : public rclcpp::Node
         RCLCPP_INFO(this->get_logger(), "Cannot get voice activity");
       }
 
+      // Update probability and edit duration time
+      if(retVAD == 1){
+        active_probability = active_probability * maintain_likelihood / (active_probability * maintain_likelihood + (1-active_probability)*(1-maintain_likelihood));
+      }else{
+        active_probability = active_probability * (1-maintain_likelihood) / (active_probability * (1-maintain_likelihood) + (1-active_probability)*maintain_likelihood);
+      }
+
+      if(active_probability < 0.01)
+        active_probability = 0.01;
+
+      if(active_probability >= active_threshold){
+        duration_time_ += 0.02;
+        direction_message.duration_time = duration_time_;
+      }else{
+        duration_time_ = 0;
+        direction_message.duration_time = 0.0;
+      }
+
       // Illustrate the estimated direction
       int r = 3; // ratio of the arrow size
 
@@ -116,7 +138,7 @@ class RespeakerPublisher : public rclcpp::Node
         arrow_message.color.a = 0.5;
       }
 
-      RCLCPP_INFO(this->get_logger(), "Publishing SoundSourceDirection: '%.2f, %.2f, %d'", direction_message.unit_direction_x, direction_message.unit_direction_y, direction_message.activity);
+      RCLCPP_INFO(this->get_logger(), "Publishing SoundSourceDirection: '%.2f, %.2f, %d, %f'", direction_message.unit_direction_x, direction_message.unit_direction_y, direction_message.activity, direction_message.duration_time);
       direction_publisher_->publish(direction_message);
       arrow_publisher_->publish(arrow_message);
     }
@@ -181,6 +203,10 @@ class RespeakerPublisher : public rclcpp::Node
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr arrow_publisher_;
     int retDir, retVAD, retSpch;
     libusb_device_handle *dev_handle;
+    double active_probability;
+    double maintain_likelihood;
+    double active_threshold;
+    float duration_time_;
 };
 
 int main(int argc, char * argv[])
