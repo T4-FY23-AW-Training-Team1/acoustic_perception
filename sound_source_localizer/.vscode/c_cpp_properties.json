@@ -367,7 +367,8 @@
                 "/home/taikiyamada/autoware/src/universe/external/tier4_autoware_msgs/tier4_auto_msgs_converter/include/**",
                 "/home/taikiyamada/autoware/src/vehicle/external/pacmod_interface/pacmod_interface/include/**",
                 "/usr/include/**",
-                "/opt/ros/humble/include/visualization_msgs"
+                "/opt/ros/humble/include/visualization_msgs",
+                "/usr/include/eigen3"
             ],
             "name": "ROS",
             "intelliSenseMode": "gcc-x64",
