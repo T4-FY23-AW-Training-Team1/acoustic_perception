@@ -1,0 +1,11 @@
+<launch>
+　<arg name="launch_driver" default="true"/>
+　<arg name="sound_source_direction" default="/external/perception/sound_source_direction"/>
+　<arg name="sound_source_direction_arrow" default="/external/perception/sound_source_direction/arrow"/>
+　<node pkg="sound_source_localizer" exec="micarray_driver" name="micarray_driver" output="log" if="$(var launch_driver)">
+　  <remap from="~/output/sound_source_direction" to="$(var sound_source_direction)"/>
+　  <remap from="~/output/arrow" to="$(var sound_source_direction_arrow)"/>
+　  <param from="$(find-pkg-share sound_source_localizer)/config/sound_source_localizer.param.yaml"/>
+　  <param name="MUSIC.microphone_arrangement" value="$(find-pkg-share sound_source_localizer)/config/micpos.csv"/>
+　</node>
+</launch>

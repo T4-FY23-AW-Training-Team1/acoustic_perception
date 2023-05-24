@@ -24,9 +24,8 @@ ament_auto_find_build_dependencies()
 #link_directories(${LIBUSB_LIBRARY_DIRS})
 #add_definitions(${LIBUSB_CFLAGS_OTHER})
 
-ament_auto_add_executable(respeaker_driver src/respeaker_publisher.cpp)
-#target_link_libraries(respeaker_driver ${LIBUSB_LIBRARIES})
-target_link_libraries(respeaker_driver 
+ament_auto_add_executable(micarray_driver src/micarray_publisher.cpp)
+target_link_libraries(micarray_driver 
                         Eigen3::Eigen
                         ${ALSA_LIBRARIES})
 
@@ -46,4 +45,5 @@ endif()
 ament_auto_package(
         INSTALL_TO_SHARE
         launch
+        config
 )
