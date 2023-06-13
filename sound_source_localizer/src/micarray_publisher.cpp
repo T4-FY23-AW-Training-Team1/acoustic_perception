@@ -226,7 +226,9 @@ class RespeakerPublisher : public rclcpp::Node
       this->declare_parameter<double>("MUSIC.spectrum_threshold", 10.0);
       this->declare_parameter<double>("MUSIC.maintain_likelihood", 0.80);
       this->declare_parameter<double>("MUSIC.activity_threshold", 0.80);
+      this->declare_parameter<double>("MUSIC.wait_time_length", 1.00);
       this->declare_parameter<int>("MUSIC.resolution_degree", 1);
+      this->declare_parameter<int>("MUSIC.closeness_threshold", 30);
       this->declare_parameter<std::string>("MUSIC.microphone_arrangement", "");
 
       // get parameter values
@@ -249,9 +251,12 @@ class RespeakerPublisher : public rclcpp::Node
       this->get_parameter("MUSIC.spectrum_threshold", spectrum_threshold);
       this->get_parameter("MUSIC.maintain_likelihood", maintain_likelihood);
       this->get_parameter("MUSIC.activity_threshold", activity_threshold);
+      this->get_parameter("MUSIC.wait_time_length", wait_time_length);
       this->get_parameter("MUSIC.resolution_degree", resolution_degree);
+      this->get_parameter("MUSIC.closeness_threshold", closeness_threshold);
       this->get_parameter("MUSIC.microphone_arrangement", micpos_csv);
       micpos = load_csv(micpos_csv);
+      source_time_limit_ = wait_time_length;
       
       std::ostringstream oss;
       oss << "MicPos =\n" << micpos;
@@ -290,7 +295,7 @@ class RespeakerPublisher : public rclcpp::Node
       auto direction_message = acoustics_msgs::msg::SoundSourceDirection();
       auto arrow_message = visualization_msgs::msg::Marker();
       direction_message.header.stamp = this->now();
-      direction_message.header.frame_id = "sensor_kit_base_link";
+      direction_message.header.frame_id = "base_link";
       arrow_message.header = direction_message.header;
       arrow_message.ns = "direction_arrow";
       arrow_message.id = 0;
@@ -369,6 +374,49 @@ class RespeakerPublisher : public rclcpp::Node
 
       direction_message.activity = retVAD;
 
+      // Single Source Tracker
+      double inner_product = old_direction.unit_direction_x * direction_message.unit_direction_x + old_direction.unit_direction_y * direction_message.unit_direction_y;
+      //RCLCPP_INFO(this->get_logger(), "???=%d", closeness_threshold);
+      if(direction_message.max_spectrum >= spectrum_threshold){
+        if(duration_time_ <  (float)ros_timer_period_ms/1000/2 || old_direction.header.frame_id.empty()){
+          RCLCPP_INFO(this->get_logger(), "Found new source!!");
+          duration_time_ = (float)ros_timer_period_ms/1000;
+          source_time_limit_ = wait_time_length;
+          old_direction = direction_message;
+        }else if(inner_product > cos(closeness_threshold * M_PI / 180)){  // The inner product of two unit directions will directly be the cos value of the angle between them
+          RCLCPP_INFO(this->get_logger(), "Closeness confirmed (inpro=%lf, cos(thre)=%lf)", inner_product, cos(closeness_threshold * M_PI / 180));
+          duration_time_ += (float)ros_timer_period_ms/1000;
+          source_time_limit_ = wait_time_length;
+          old_direction = direction_message;
+        }else if(direction_message.max_spectrum > old_direction.max_spectrum){
+          RCLCPP_INFO(this->get_logger(), "Something else?");
+          duration_time_ = (float)ros_timer_period_ms/1000;
+          source_time_limit_ = wait_time_length;
+          old_direction = direction_message;
+        }else{
+          // Just caught some moise
+          source_time_limit_ -= (float)ros_timer_period_ms/1000;
+          if(source_time_limit_ <= 0.0){
+            RCLCPP_INFO(this->get_logger(), "Time's over (Dead for %lf seconds)", wait_time_length);
+            duration_time_ = 0.0;
+          }else{
+            RCLCPP_INFO(this->get_logger(), "%lf seconds remaining", source_time_limit_);
+            duration_time_ += (float)ros_timer_period_ms/1000;
+          }
+        }
+      }else{
+        source_time_limit_ -= (float)ros_timer_period_ms/1000;
+        if(source_time_limit_ <= 0.0){
+          RCLCPP_INFO(this->get_logger(), "Time's over (Dead for %lf seconds)", wait_time_length);
+          duration_time_ = 0.0;
+        }else{
+          RCLCPP_INFO(this->get_logger(), "%lf seconds remaining", source_time_limit_);
+          duration_time_ += (float)ros_timer_period_ms/1000;
+        }
+      }      
+      direction_message.duration_time = duration_time_;
+
+      /*
       // Update probability and edit duration time
       if(retVAD == 1){
         active_probability = active_probability * maintain_likelihood / (active_probability * maintain_likelihood + (1-active_probability)*(1-maintain_likelihood));
@@ -385,7 +433,7 @@ class RespeakerPublisher : public rclcpp::Node
       }else{
         duration_time_ = 0;
         direction_message.duration_time = 0.0;
-      }
+      }*/
 
       // Illustrate the estimated direction
       int r = 3; // ratio of the arrow size
@@ -418,7 +466,7 @@ class RespeakerPublisher : public rclcpp::Node
         arrow_message.color.a = 0.5;
       }
 
-      RCLCPP_INFO(this->get_logger(), "Publishing SoundSourceDirection: '%.2f, %.2f, (%d degrees), %lf, %d, %f'", direction_message.unit_direction_x, direction_message.unit_direction_y,  ssDir, direction_message.max_spectrum, direction_message.activity, direction_message.duration_time);
+      RCLCPP_INFO(this->get_logger(), "Publishing SoundSourceDirection: '%.2f, %.2f, (%d degrees), %lf, %d, %lf'", direction_message.unit_direction_x, direction_message.unit_direction_y,  ssDir, direction_message.max_spectrum, direction_message.activity, direction_message.duration_time);
       direction_publisher_->publish(direction_message);
       arrow_publisher_->publish(arrow_message);
     }
@@ -481,7 +529,7 @@ class RespeakerPublisher : public rclcpp::Node
       Eigen::VectorXd output = Eigen::VectorXd::Zero(360/resolution);
 
       // Get target frequency bin
-      double unit_freq = (double)8000/num_bin;
+      double unit_freq = (double)sample_rate/2/num_bin;
       double min_targ_freq = min_frequency;
       double max_targ_freq = max_frequency;
       int min_targ_freq_bin_index = (int)round(min_targ_freq / unit_freq);
@@ -548,16 +596,18 @@ class RespeakerPublisher : public rclcpp::Node
     static std::unique_ptr<AlsaReader> alsa_handle_;
 
     // variaables defined in yaml
-    int sample_rate, bit_depth, num_channels, recordings_duration_ms, ros_timer_period_ms, resolution_degree;
+    int sample_rate, bit_depth, num_channels, recordings_duration_ms, ros_timer_period_ms, resolution_degree, closeness_threshold;
     snd_pcm_format_t format;
     std::vector<int64_t> target_channels;
     std::string device_name;
     std::string micpos_csv;
     Eigen::MatrixXd micpos;
-    double sound_speed, min_frequency, max_frequency, spectrum_threshold, maintain_likelihood, activity_threshold;
+    acoustics_msgs::msg::SoundSourceDirection old_direction;
+    double sound_speed, min_frequency, max_frequency, spectrum_threshold, maintain_likelihood, activity_threshold, wait_time_length;
     // variables not defined in yaml
     double active_probability;
-    float duration_time_;
+    double source_time_limit_;
+    double duration_time_;
 };
 
 //std::unique_ptr<AlsaHandle> RespeakerPublisher::alsa_handle_ = nullptr;

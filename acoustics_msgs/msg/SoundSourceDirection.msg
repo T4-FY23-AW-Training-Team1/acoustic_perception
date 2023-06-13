@@ -3,4 +3,4 @@ uint16 activity
 float64 max_spectrum
 float32 unit_direction_x
 float32 unit_direction_y
-float32 duration_time
+float64 duration_time

@@ -7,14 +7,16 @@ micarray_driver:
       target_channels: [1, 2, 3, 4]
       format: 2 # This is the value of an enum factor"SND_PCM_FORMAT_S16_LE". Look enum _snd_pcm_format in pcm.h
       device_name: "hw:CARD=ArrayUAC10"
-      recordings_duration_ms: 300
-      ros_timer_period_ms: 500
+      recordings_duration_ms: 200
+      ros_timer_period_ms: 250
       sound_speed: 343.0
     MUSIC:
-      min_frequency: 700.0
-      max_frequency: 1100.0
-      spectrum_threshold: 9.8
+      min_frequency: 2850.0
+      max_frequency: 3250.0
+      spectrum_threshold: 3.5 #5.0
       maintain_likelihood: 0.80
       activity_threshold: 0.80
+      wait_time_length: 1.0
       resolution_degree: 1
+      closeness_threshold: 40
       microphone_arrangement: "micpos.csv"
