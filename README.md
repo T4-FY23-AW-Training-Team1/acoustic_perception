@@ -1,16 +1,16 @@
 # acoustic_perception
 This repository includes packages which are useful for using microphone arrays.
 
-The microphone array [ReSpeaker ver 2.0](https://wiki.seeedstudio.com/ReSpeaker_Mic_Array_v2.0/) is considered here.
+The microphone array [ReSpeaker ver 2.0](https://wiki.seeedstudio.com/ReSpeaker_Mic_Array_v2.0/) is considered as an example here.
 
 Try [here](https://wiki.seeedstudio.com/ReSpeaker_Mic_Array_v2.0/#update-firmware) if you cannot connect to ReSpeaker.
 
 The following is a description of the packages.
 
 ## acoustics_msgs
-This is a package that contains a message type `SoundSourceDirection.msg` 
+This is a package that contains a message type `SoundSourceDirection` 
 
-The format of `SoundSourceDirection.msg` looks like this.
+The format of `SoundSourceDirection` looks like this.
 
 ```
 std_msgs/Header header
@@ -27,8 +27,17 @@ float32 duration_time
 `max_spectrum` shows the maximum MUSIC spectrum, which can be said that the spectrum of the estimated direction.
 
 ## sound_source_localizer
-This package collects sound source directions from the microphone array, and converts them as `SoundSourceDirection.msg` type topics and publish.
+This package collects sound source directions from the microphone array, and converts them as `SoundSourceDirection` type topics and publish.
 
 Parameters can be set in `sound_source_localizer.param.yaml`
+
+### Direction estimation (MUSIC method)
+
+sound_source_localizer estimates the sound source direction through MUSIC mehtod.
+
+
+
+### Duration estimation
+
 
 A `geometry_msgs/marker` type topic is also published as an arrow, showing the estimated direction and activity.

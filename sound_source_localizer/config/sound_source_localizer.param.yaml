@@ -20,3 +20,5 @@ micarray_driver:
       resolution_degree: 1
       closeness_threshold: 40
       microphone_arrangement: "micpos.csv"
+    debug:
+      arrow_size: 3.0

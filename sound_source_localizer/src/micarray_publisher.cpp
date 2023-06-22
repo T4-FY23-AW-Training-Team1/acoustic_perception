@@ -64,7 +64,7 @@ class AlsaReader {
               RCLCPP_ERROR(rclcpp::get_logger("PCM Device"), "Unable to set hw parameters: %s", snd_strerror(rc));
               rclcpp::shutdown();
         }
-        //RCLCPP_INFO(rclcpp::get_logger("PCM DEVICE"), "Constructor Done");
+        RCLCPP_DEBUG(rclcpp::get_logger("PCM DEVICE"), "Constructor Done");
     }
 
     ~AlsaReader() {
@@ -76,7 +76,7 @@ class AlsaReader {
     void start() {
         is_running_ = true;
         reader_thread_ = std::thread(&AlsaReader::readLoop, this);
-        //RCLCPP_INFO(rclcpp::get_logger("PCM DEVICE"), "ALSA reader started");
+        RCLCPP_DEBUG(rclcpp::get_logger("PCM DEVICE"), "ALSA reader started");
     }
 
     void stop() {
@@ -89,7 +89,7 @@ class AlsaReader {
     }
 
     std::vector<int16_t> record() {
-      //RCLCPP_INFO(rclcpp::get_logger("PCM DEVICE"), "Start recording");
+      RCLCPP_DEBUG(rclcpp::get_logger("PCM DEVICE"), "Start recording");
       std::lock_guard<std::mutex> lock(data_mutex_);
       return data_;
     }
@@ -101,9 +101,7 @@ class AlsaReader {
   private:
     void readLoop() {
         while (is_running_) {
-          //RCLCPP_INFO(rclcpp::get_logger("PCM DEVICE"), "is_running_ = TRUE, frames = %ld", frames);
           std::vector<int16_t> new_data(frames*channels);
-          //RCLCPP_INFO(rclcpp::get_logger("PCM DEVICE"), "start snd_pcm_readi");
           int rc = snd_pcm_readi(handle, new_data.data(), frames);
           if (rc == -EPIPE) {
               RCLCPP_ERROR(rclcpp::get_logger("PCM Device"), "overrun occurred");
@@ -113,11 +111,9 @@ class AlsaReader {
           } else if (rc != (int)frames) {
               RCLCPP_ERROR(rclcpp::get_logger("PCM Device"), "short read, read %d frames", rc);
           }
-          //RCLCPP_INFO(rclcpp::get_logger("PCM DEVICE"), "move to data");
-          {
-              std::lock_guard<std::mutex> lock(data_mutex_);
-              data_ = std::move(new_data);
-          }
+
+          std::lock_guard<std::mutex> lock(data_mutex_);
+          data_ = std::move(new_data);
         }
     }
 
@@ -170,12 +166,8 @@ public:
     }
 
     std::vector<int16_t> record(const int num_channels) {
-    //void record(){
         std::vector<int16_t> data(frames * num_channels);
-        //std::vector<int16_t> data(120);
-        //RCLCPP_INFO(rclcpp::get_logger("PCM Device"), "readi start");
         int rc = snd_pcm_readi(handle, data.data(), frames);
-        //RCLCPP_INFO(rclcpp::get_logger("PCM Device"), "readi end");
         if (rc == -EPIPE) {
             RCLCPP_ERROR(rclcpp::get_logger("PCM Device"), "overrun occurred");
             snd_pcm_prepare(handle);
@@ -205,9 +197,7 @@ class RespeakerPublisher : public rclcpp::Node
 
     RespeakerPublisher() : Node("micarray_driver")
     {
-      active_probability = 0.01;
       duration_time_ = 0.0;
-      printf("Started\n");
       
       // "recordings" group parameters
       this->declare_parameter<int>("recordings.sample_rate", 16000);
@@ -221,15 +211,16 @@ class RespeakerPublisher : public rclcpp::Node
       this->declare_parameter<double>("recordings.sound_speed", 343.0);
 
       // "MUSIC" group parameters
-      this->declare_parameter<double>("MUSIC.min_frequency", 700);
-      this->declare_parameter<double>("MUSIC.max_frequency", 1000);
+      this->declare_parameter<double>("MUSIC.min_frequency", 700.0);
+      this->declare_parameter<double>("MUSIC.max_frequency", 1000.0);
       this->declare_parameter<double>("MUSIC.spectrum_threshold", 10.0);
-      this->declare_parameter<double>("MUSIC.maintain_likelihood", 0.80);
-      this->declare_parameter<double>("MUSIC.activity_threshold", 0.80);
       this->declare_parameter<double>("MUSIC.wait_time_length", 1.00);
       this->declare_parameter<int>("MUSIC.resolution_degree", 1);
       this->declare_parameter<int>("MUSIC.closeness_threshold", 30);
       this->declare_parameter<std::string>("MUSIC.microphone_arrangement", "");
+
+      // "debug" group paramters
+      this->declare_parameter<double>("debug.arrow_size", 3.0);
 
       // get parameter values
       this->get_parameter("recordings.sample_rate", sample_rate);
@@ -249,14 +240,14 @@ class RespeakerPublisher : public rclcpp::Node
       this->get_parameter("MUSIC.min_frequency", min_frequency);
       this->get_parameter("MUSIC.max_frequency", max_frequency);
       this->get_parameter("MUSIC.spectrum_threshold", spectrum_threshold);
-      this->get_parameter("MUSIC.maintain_likelihood", maintain_likelihood);
-      this->get_parameter("MUSIC.activity_threshold", activity_threshold);
       this->get_parameter("MUSIC.wait_time_length", wait_time_length);
       this->get_parameter("MUSIC.resolution_degree", resolution_degree);
       this->get_parameter("MUSIC.closeness_threshold", closeness_threshold);
       this->get_parameter("MUSIC.microphone_arrangement", micpos_csv);
       micpos = load_csv(micpos_csv);
       source_time_limit_ = wait_time_length;
+
+      this->get_parameter("debug.arrow_size", arrow_size);
       
       std::ostringstream oss;
       oss << "MicPos =\n" << micpos;
@@ -291,7 +282,6 @@ class RespeakerPublisher : public rclcpp::Node
   private:
 
     void timer_callback(){
-      //RCLCPP_INFO(this->get_logger(), "Timer Callback");
       auto direction_message = acoustics_msgs::msg::SoundSourceDirection();
       auto arrow_message = visualization_msgs::msg::Marker();
       direction_message.header.stamp = this->now();
@@ -303,64 +293,38 @@ class RespeakerPublisher : public rclcpp::Node
       arrow_message.action = visualization_msgs::msg::Marker::ADD;
 
       // Record data
-      //const int num_frames = (int)alsa_handle_->getExpectedFrames();
       const int num_samples = (int)alsa_handle_->getExpectedFrames() * num_channels;
       std::vector<int16_t> data(num_samples);
-      //std::vector<int16_t> data(20*num_channels);
       std::vector<std::vector<int16_t>> sep_data(num_channels);
-      //std::string debugmsg = "Start recording";
-      //RCLCPP_INFO(this->get_logger(), debugmsg.c_str());
-      //data = alsa_handle_->record(num_channels);
       data = alsa_handle_->record();
-      //RCLCPP_INFO(this->get_logger(), "End recording");
-      //alsa_handle_->record();
 
       // Separate data
-      //RCLCPP_INFO(this->get_logger(), "start separation (data_size %ld)", data.size());
       for (int i = 0; i < num_samples; i++){
         int chIdx = i % num_channels;
         sep_data[chIdx].push_back(data[i]);
       }
 
      // Get target channels
-     //RCLCPP_INFO(this->get_logger(), "extract target channels (sep_data_size %ld)", sep_data[0].size());
       std::vector<std::vector<int16_t>> objChannels;
       for (int64_t index : target_channels){
               objChannels.push_back(sep_data[index]);
       }
 
       // Get STFT result
-      //RCLCPP_INFO(this->get_logger(), "start stft (obj_chan_size: %ld %ld)", objChannels.size(), objChannels[0].size());
       std::vector<Eigen::MatrixXcd> stft_results;
-      //RCLCPP_INFO(this->get_logger(), "target_channel size is %d",target_channels.size());
       for(int i = 0; i < (int)objChannels.size(); i++){
           stft_results.push_back(stft(objChannels[i], 512, 160));
       }
 
       // MUSIC
-      /* Eigen::MatrixXd micpos(4,2);
-      micpos << 1, 1,
-                -1, 1,
-                -1,-1,
-                1, -1;
-      micpos = micpos * 0.0457/2;
-      int resolution = 1;*/
-      // load micpos
-      //std::ostringstream oss;
-      //oss << "Start MUSIC:\n " << stft_results[0];
-      //RCLCPP_INFO(this->get_logger(), "%s", oss.str().c_str());
       Eigen::VectorXd MUSICresult = MUSIC(stft_results, micpos, resolution_degree);
-
-      //std::ostringstream oss;
-      //oss << "Pmu: \n" << MUSICresult << std::endl;
-      //RCLCPP_INFO(this->get_logger(), "%s", oss.str().c_str());
 
       Eigen::VectorXd::Index MUSICIndex;
       double maxMUSICspcetrum = MUSICresult.maxCoeff(&MUSICIndex);
       direction_message.max_spectrum = maxMUSICspcetrum;
       
-      int ssDir = MUSICIndex * resolution_degree;
-      int retVAD = maxMUSICspcetrum > spectrum_threshold;
+      int ssDir = MUSICIndex * resolution_degree; // sound source Direction
+      int VAD = maxMUSICspcetrum > spectrum_threshold; 
 
       if(ssDir >= 0){
         float temprad = float(ssDir)*M_PI/180;
@@ -372,11 +336,10 @@ class RespeakerPublisher : public rclcpp::Node
         RCLCPP_INFO(this->get_logger(), "Cannot get sound source direction");
       }
 
-      direction_message.activity = retVAD;
+      direction_message.activity = VAD;
 
       // Single Source Tracker
       double inner_product = old_direction.unit_direction_x * direction_message.unit_direction_x + old_direction.unit_direction_y * direction_message.unit_direction_y;
-      //RCLCPP_INFO(this->get_logger(), "???=%d", closeness_threshold);
       if(direction_message.max_spectrum >= spectrum_threshold){
         if(duration_time_ <  (float)ros_timer_period_ms/1000/2 || old_direction.header.frame_id.empty()){
           RCLCPP_INFO(this->get_logger(), "Found new source!!");
@@ -416,27 +379,8 @@ class RespeakerPublisher : public rclcpp::Node
       }      
       direction_message.duration_time = duration_time_;
 
-      /*
-      // Update probability and edit duration time
-      if(retVAD == 1){
-        active_probability = active_probability * maintain_likelihood / (active_probability * maintain_likelihood + (1-active_probability)*(1-maintain_likelihood));
-      }else{
-        active_probability = active_probability * (1-maintain_likelihood) / (active_probability * (1-maintain_likelihood) + (1-active_probability)*maintain_likelihood);
-      }
-
-      if(active_probability < 0.01)
-        active_probability = 0.01;
-
-      if(active_probability >= activity_threshold){
-        duration_time_ += (float)ros_timer_period_ms/1000;
-        direction_message.duration_time = duration_time_;
-      }else{
-        duration_time_ = 0;
-        direction_message.duration_time = 0.0;
-      }*/
-
       // Illustrate the estimated direction
-      int r = 3; // ratio of the arrow size
+      int r = arrow_size; // ratio of the arrow size
 
       geometry_msgs::msg::Point start_point, end_point;
       start_point.x = 0.0;
@@ -454,7 +398,7 @@ class RespeakerPublisher : public rclcpp::Node
       arrow_message.scale.z = 0.5*r; // head length
 
       // Set arrow color
-      if(retVAD == 1){
+      if(VAD == 1){
         arrow_message.color.r = 1.0;
         arrow_message.color.g = 0.0;
         arrow_message.color.b = 0.0;
@@ -592,7 +536,6 @@ class RespeakerPublisher : public rclcpp::Node
     rclcpp::TimerBase::SharedPtr timer_;
     rclcpp::Publisher<acoustics_msgs::msg::SoundSourceDirection>::SharedPtr direction_publisher_;
     rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr arrow_publisher_;
-    //static std::unique_ptr<AlsaHandle> alsa_handle_;
     static std::unique_ptr<AlsaReader> alsa_handle_;
 
     // variaables defined in yaml
@@ -603,14 +546,13 @@ class RespeakerPublisher : public rclcpp::Node
     std::string micpos_csv;
     Eigen::MatrixXd micpos;
     acoustics_msgs::msg::SoundSourceDirection old_direction;
-    double sound_speed, min_frequency, max_frequency, spectrum_threshold, maintain_likelihood, activity_threshold, wait_time_length;
+    double sound_speed, min_frequency, max_frequency, spectrum_threshold, wait_time_length, arrow_size;
+
     // variables not defined in yaml
-    double active_probability;
     double source_time_limit_;
     double duration_time_;
 };
 
-//std::unique_ptr<AlsaHandle> RespeakerPublisher::alsa_handle_ = nullptr;
 std::unique_ptr<AlsaReader> RespeakerPublisher::alsa_handle_ = nullptr;
 
 int main(int argc, char * argv[])
